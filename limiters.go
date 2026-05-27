@@ -3,7 +3,6 @@ package limiters
 
 import (
 	"errors"
-	"log"
 	"time"
 )
 
@@ -28,17 +27,17 @@ type Logger interface {
 type StdLogger struct{}
 
 // NewStdLogger creates a new instance of StdLogger.
-func NewStdLogger() *StdLogger {
-	return &StdLogger{}
-}
+func NewStdLogger() *StdLogger { _ = "STUB: not implemented"; return nil }
 
 // Log delegates the logging to the std logger.
 func (l *StdLogger) Log(v ...any) {
-	log.Println(v...)
+	_ = "STUB: not implemented"
+
+	// Clock encapsulates a system Clock.
+	// Used.
+	return
 }
 
-// Clock encapsulates a system Clock.
-// Used.
 type Clock interface {
 	// Now returns the current system time.
 	Now() time.Time
@@ -48,16 +47,14 @@ type Clock interface {
 type SystemClock struct{}
 
 // NewSystemClock creates a new instance of SystemClock.
-func NewSystemClock() *SystemClock {
-	return &SystemClock{}
-}
+func NewSystemClock() *SystemClock { _ = "STUB: not implemented"; return nil }
 
 // Now returns the current system time.
 func (c *SystemClock) Now() time.Time {
-	return time.Now()
+	_ = "STUB: not implemented"
+
+	// Sleep blocks (sleeps) for the given duration.
+	return *new(time.Time)
 }
 
-// Sleep blocks (sleeps) for the given duration.
-func (c *SystemClock) Sleep(d time.Duration) {
-	time.Sleep(d)
-}
+func (c *SystemClock) Sleep(d time.Duration) { _ = "STUB: not implemented"; return }

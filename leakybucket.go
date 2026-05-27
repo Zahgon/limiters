@@ -1,28 +1,15 @@
 package limiters
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
-	"encoding/json"
-	"fmt"
-	"maps"
-	"math"
-	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/pkg/errors"
 	"github.com/redis/go-redis/v9"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
@@ -34,10 +21,12 @@ type LeakyBucketState struct {
 
 // IzZero returns true if the bucket state is zero valued.
 func (s LeakyBucketState) IzZero() bool {
-	return s.Last == 0
+	_ = "STUB: not implemented"
+
+	// LeakyBucketStateBackend interface encapsulates the logic of retrieving and persisting the state of a LeakyBucket.
+	return false
 }
 
-// LeakyBucketStateBackend interface encapsulates the logic of retrieving and persisting the state of a LeakyBucket.
 type LeakyBucketStateBackend interface {
 	// State gets the current state of the LeakyBucket.
 	State(ctx context.Context) (LeakyBucketState, error)
@@ -62,74 +51,25 @@ type LeakyBucket struct {
 
 // NewLeakyBucket creates a new instance of LeakyBucket.
 func NewLeakyBucket(capacity int64, rate time.Duration, locker DistLocker, leakyBucketStateBackend LeakyBucketStateBackend, clock Clock, logger Logger) *LeakyBucket {
-	return &LeakyBucket{
-		locker:   locker,
-		backend:  leakyBucketStateBackend,
-		clock:    clock,
-		logger:   logger,
-		capacity: capacity,
-		rate:     int64(rate),
-	}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // Limit returns the time duration to wait before the request can be processed.
 // It returns ErrLimitExhausted if the request overflows the bucket's capacity. In this case the returned duration
 // means how long it would have taken to wait for the request to be processed if the bucket was not overflowed.
 func (t *LeakyBucket) Limit(ctx context.Context) (time.Duration, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	err := t.locker.Lock(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	defer func() {
-		err := t.locker.Unlock(ctx)
-		if err != nil {
-			t.logger.Log(err)
-		}
-	}()
-
-	state, err := t.backend.State(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	now := t.clock.Now().UnixNano()
-	if now < state.Last {
-		// The queue has requests in it: move the current request to the last position + 1.
-		state.Last += t.rate
-	} else {
-		// The queue is empty.
-		// The offset is the duration to wait in case the last request happened less than rate duration ago.
-		var offset int64
-
-		delta := now - state.Last
-		if delta < t.rate {
-			offset = t.rate - delta
-		}
-
-		state.Last = now + offset
-	}
-
-	wait := state.Last - now
-	if wait/t.rate >= t.capacity {
-		return time.Duration(wait), ErrLimitExhausted
-	}
-
-	err = t.backend.SetState(ctx, state)
-	if err != nil {
-		return 0, err
-	}
-
-	return time.Duration(wait), nil
+	_ = "STUB: not implemented"
+	return *new(time.Duration), nil
 }
+
+// The queue has requests in it: move the current request to the last position + 1.
+
+// The queue is empty.
+// The offset is the duration to wait in case the last request happened less than rate duration ago.
 
 // Reset resets the bucket.
-func (t *LeakyBucket) Reset(ctx context.Context) error {
-	return t.backend.Reset(ctx)
-}
+func (t *LeakyBucket) Reset(ctx context.Context) error { _ = "STUB: not implemented"; return nil }
 
 // LeakyBucketInMemory is an in-memory implementation of LeakyBucketStateBackend.
 type LeakyBucketInMemory struct {
@@ -137,29 +77,24 @@ type LeakyBucketInMemory struct {
 }
 
 // NewLeakyBucketInMemory creates a new instance of LeakyBucketInMemory.
-func NewLeakyBucketInMemory() *LeakyBucketInMemory {
-	return &LeakyBucketInMemory{}
-}
+func NewLeakyBucketInMemory() *LeakyBucketInMemory { _ = "STUB: not implemented"; return nil }
 
 // State gets the current state of the bucket.
 func (l *LeakyBucketInMemory) State(ctx context.Context) (LeakyBucketState, error) {
-	return l.state, ctx.Err()
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
 
 // SetState sets the current state of the bucket.
 func (l *LeakyBucketInMemory) SetState(ctx context.Context, state LeakyBucketState) error {
-	l.state = state
-
-	return ctx.Err()
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // Reset resets the current state of the bucket.
 func (l *LeakyBucketInMemory) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-
-	return l.SetState(ctx, state)
+	_ = "STUB: not implemented"
+	return nil
 }
 
 const (
@@ -186,157 +121,54 @@ type LeakyBucketEtcd struct {
 // If raceCheck is true and the keys in etcd are modified in between State() and SetState() calls then
 // ErrRaceCondition is returned.
 func NewLeakyBucketEtcd(cli *clientv3.Client, prefix string, ttl time.Duration, raceCheck bool) *LeakyBucketEtcd {
-	return &LeakyBucketEtcd{
-		prefix:    prefix,
-		cli:       cli,
-		ttl:       ttl,
-		raceCheck: raceCheck,
-	}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // State gets the bucket's current state from etcd.
 // If there is no state available in etcd then the initial bucket's state is returned.
 func (l *LeakyBucketEtcd) State(ctx context.Context) (LeakyBucketState, error) {
+	_ = "STUB: not implemented"
 	// Reset the lease ID as it will be updated by the successful Get operation below.
-	l.leaseID = 0
-	// Get all the keys under the prefix in a single request.
-	r, err := l.cli.Get(ctx, l.prefix, clientv3.WithRange(incPrefix(l.prefix)))
-	if err != nil {
-		return LeakyBucketState{}, errors.Wrapf(err, "failed to get keys in range ['%s', '%s') from etcd", l.prefix, incPrefix(l.prefix))
-	}
-
-	if len(r.Kvs) == 0 {
-		return LeakyBucketState{}, nil
-	}
-
-	state := LeakyBucketState{}
-
-	parsed := 0
-	if l.ttl == 0 {
-		// Ignore lease when there is no expiration
-		parsed |= 2
-	}
-
-	var v int64
-
-	for _, kv := range r.Kvs {
-		switch string(kv.Key) {
-		case etcdKey(l.prefix, etcdKeyLBLast):
-			v, err = parseEtcdInt64(kv)
-			if err != nil {
-				return LeakyBucketState{}, err
-			}
-
-			state.Last = v
-			parsed |= 1
-			l.lastVersion = kv.Version
-
-		case etcdKey(l.prefix, etcdKeyLBLease):
-			v, err = parseEtcdInt64(kv)
-			if err != nil {
-				return LeakyBucketState{}, err
-			}
-
-			l.leaseID = clientv3.LeaseID(v)
-			parsed |= 2
-		}
-	}
-
-	if parsed != 3 {
-		return LeakyBucketState{}, errors.New("failed to get state from etcd: some keys are missing")
-	}
-
-	return state, nil
+	return *new(LeakyBucketState), nil
 }
+
+// Get all the keys under the prefix in a single request.
+
+// Ignore lease when there is no expiration
 
 // createLease creates a new lease in etcd and updates the t.leaseID value.
 func (l *LeakyBucketEtcd) createLease(ctx context.Context) error {
-	lease, err := l.cli.Grant(ctx, int64(math.Ceil(l.ttl.Seconds())))
-	if err != nil {
-		return errors.Wrap(err, "failed to create a new lease in etcd")
-	}
-
-	l.leaseID = lease.ID
-
+	_ = "STUB: not implemented"
 	return nil
 }
 
 // save saves the state to etcd using the existing lease.
 func (l *LeakyBucketEtcd) save(ctx context.Context, state LeakyBucketState) error {
-	var opts []clientv3.OpOption
-	if l.ttl > 0 {
-		opts = append(opts, clientv3.WithLease(l.leaseID))
-	}
-
-	ops := []clientv3.Op{
-		clientv3.OpPut(etcdKey(l.prefix, etcdKeyLBLast), fmt.Sprintf("%d", state.Last), opts...),
-	}
-	if l.ttl > 0 {
-		ops = append(ops, clientv3.OpPut(etcdKey(l.prefix, etcdKeyLBLease), fmt.Sprintf("%d", l.leaseID), opts...))
-	}
-
-	if !l.raceCheck {
-		_, err := l.cli.Txn(ctx).Then(ops...).Commit()
-		if err != nil {
-			return errors.Wrap(err, "failed to commit a transaction to etcd")
-		}
-
-		return nil
-	}
-	// Put the keys only if they have not been modified since the most recent read.
-	r, err := l.cli.Txn(ctx).If(
-		clientv3.Compare(clientv3.Version(etcdKey(l.prefix, etcdKeyLBLast)), ">", l.lastVersion),
-	).Else(ops...).Commit()
-	if err != nil {
-		return errors.Wrap(err, "failed to commit a transaction to etcd")
-	}
-
-	if !r.Succeeded {
-		return nil
-	}
-
-	return ErrRaceCondition
+	_ = "STUB: not implemented"
+	return nil
 }
+
+// Put the keys only if they have not been modified since the most recent read.
 
 // SetState updates the state of the bucket in etcd.
 func (l *LeakyBucketEtcd) SetState(ctx context.Context, state LeakyBucketState) error {
-	if l.ttl == 0 {
-		// Avoid maintaining the lease when it has no TTL
-		return l.save(ctx, state)
-	}
+	_ = "STUB: not implemented"
 
-	if l.leaseID == 0 {
-		// Lease does not exist, create one.
-		err := l.createLease(ctx)
-		if err != nil {
-			return err
-		}
-		// No need to send KeepAlive for the newly creates lease: save the state immediately.
-		return l.save(ctx, state)
-	}
-	// Send the KeepAlive request to extend the existing lease.
-	_, err := l.cli.KeepAliveOnce(ctx, l.leaseID)
-	if errors.Is(err, rpctypes.ErrLeaseNotFound) {
-		// Create a new lease since the current one has expired.
-		err = l.createLease(ctx)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return errors.Wrapf(err, "failed to extend the lease '%d'", l.leaseID)
-	}
-
-	return l.save(ctx, state)
+	// Avoid maintaining the lease when it has no TTL
+	return nil
 }
+
+// Lease does not exist, create one.
+
+// No need to send KeepAlive for the newly creates lease: save the state immediately.
+
+// Send the KeepAlive request to extend the existing lease.
+
+// Create a new lease since the current one has expired.
 
 // Reset resets the state of the bucket in etcd.
-func (l *LeakyBucketEtcd) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-
-	return l.SetState(ctx, state)
-}
+func (l *LeakyBucketEtcd) Reset(ctx context.Context) error { _ = "STUB: not implemented"; return nil }
 
 // Deprecated: These legacy keys will be removed in a future version.
 // The state is now stored in a single JSON document under the "state" key.
@@ -361,229 +193,36 @@ type LeakyBucketRedis struct {
 // If raceCheck is true and the keys in Redis are modified in between State() and SetState() calls then
 // ErrRaceCondition is returned.
 func NewLeakyBucketRedis(cli redis.UniversalClient, prefix string, ttl time.Duration, raceCheck bool) *LeakyBucketRedis {
-	return &LeakyBucketRedis{cli: cli, prefix: prefix, ttl: ttl, raceCheck: raceCheck}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // Deprecated: Legacy format support will be removed in a future version.
 func (t *LeakyBucketRedis) oldState(ctx context.Context) (LeakyBucketState, error) {
-	var (
-		values []any
-		err    error
-	)
-
-	done := make(chan struct{}, 1)
-
-	go func() {
-		defer close(done)
-
-		keys := []string{
-			redisKey(t.prefix, redisKeyLBLast),
-		}
-		if t.raceCheck {
-			keys = append(keys, redisKey(t.prefix, redisKeyLBVersion))
-		}
-
-		values, err = t.cli.MGet(ctx, keys...).Result()
-	}()
-
-	select {
-	case <-done:
-
-	case <-ctx.Done():
-		return LeakyBucketState{}, ctx.Err()
-	}
-
-	if err != nil {
-		return LeakyBucketState{}, errors.Wrap(err, "failed to get keys from redis")
-	}
-
-	nilAny := false
-
-	for _, v := range values {
-		if v == nil {
-			nilAny = true
-
-			break
-		}
-	}
-
-	if nilAny || errors.Is(err, redis.Nil) {
-		// Keys don't exist, return an empty state.
-		return LeakyBucketState{}, nil
-	}
-
-	last, err := strconv.ParseInt(values[0].(string), 10, 64)
-	if err != nil {
-		return LeakyBucketState{}, err
-	}
-
-	if t.raceCheck {
-		t.lastVersion, err = strconv.ParseInt(values[1].(string), 10, 64)
-		if err != nil {
-			return LeakyBucketState{}, err
-		}
-	}
-
-	return LeakyBucketState{
-		Last: last,
-	}, nil
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
+
+// Keys don't exist, return an empty state.
 
 // State gets the bucket's state from Redis.
 func (t *LeakyBucketRedis) State(ctx context.Context) (LeakyBucketState, error) {
-	var err error
-
-	done := make(chan struct{}, 1)
-	errCh := make(chan error, 1)
-
-	var state LeakyBucketState
-
-	if t.raceCheck {
-		// reset in a case of returning an empty LeakyBucketState
-		t.lastVersion = 0
-	}
-
-	go func() {
-		defer close(done)
-
-		key := redisKey(t.prefix, "state")
-
-		value, err := t.cli.Get(ctx, key).Result()
-		if err != nil && !errors.Is(err, redis.Nil) {
-			errCh <- err
-
-			return
-		}
-
-		if errors.Is(err, redis.Nil) {
-			state, err = t.oldState(ctx)
-			errCh <- err
-
-			return
-		}
-
-		// Try new format
-		var item struct {
-			State   LeakyBucketState `json:"state"`
-			Version int64            `json:"version"`
-		}
-
-		err = json.Unmarshal([]byte(value), &item)
-		if err != nil {
-			errCh <- err
-
-			return
-		}
-
-		state = item.State
-		if t.raceCheck {
-			t.lastVersion = item.Version
-		}
-
-		errCh <- nil
-	}()
-
-	select {
-	case <-done:
-		err = <-errCh
-	case <-ctx.Done():
-		return LeakyBucketState{}, ctx.Err()
-	}
-
-	if err != nil {
-		return LeakyBucketState{}, errors.Wrap(err, "failed to get state from redis")
-	}
-
-	return state, nil
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
+
+// reset in a case of returning an empty LeakyBucketState
+
+// Try new format
 
 // SetState updates the state in Redis.
 func (t *LeakyBucketRedis) SetState(ctx context.Context, state LeakyBucketState) error {
-	var err error
-
-	done := make(chan struct{}, 1)
-	errCh := make(chan error, 1)
-
-	go func() {
-		defer close(done)
-
-		key := redisKey(t.prefix, "state")
-		item := struct {
-			State   LeakyBucketState `json:"state"`
-			Version int64            `json:"version"`
-		}{
-			State:   state,
-			Version: t.lastVersion + 1,
-		}
-
-		value, err := json.Marshal(item)
-		if err != nil {
-			errCh <- err
-
-			return
-		}
-
-		if !t.raceCheck {
-			errCh <- t.cli.Set(ctx, key, value, t.ttl).Err()
-
-			return
-		}
-
-		callScript := `redis.call('set', KEYS[1], ARGV[1], 'PX', ARGV[3])`
-		if t.ttl == 0 {
-			callScript = `redis.call('set', KEYS[1], ARGV[1])`
-		}
-
-		script := fmt.Sprintf(`
-			local current = redis.call('get', KEYS[1])
-			if current then
-				local data = cjson.decode(current)
-				if data.version > tonumber(ARGV[2]) then
-					return 'RACE_CONDITION'
-				end
-			end
-			%s
-			return 'OK'
-		`, callScript)
-
-		result, err := t.cli.Eval(ctx, script, []string{key}, value, t.lastVersion, int64(t.ttl/time.Millisecond)).Result()
-		if err != nil {
-			errCh <- err
-
-			return
-		}
-
-		if result == "RACE_CONDITION" {
-			errCh <- ErrRaceCondition
-
-			return
-		}
-
-		errCh <- nil
-	}()
-
-	select {
-	case <-done:
-		err = <-errCh
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	if err != nil {
-		return errors.Wrap(err, "failed to save state to redis")
-	}
-
+	_ = "STUB: not implemented"
 	return nil
 }
 
 // Reset resets the state in Redis.
-func (t *LeakyBucketRedis) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-
-	return t.SetState(ctx, state)
-}
+func (t *LeakyBucketRedis) Reset(ctx context.Context) error { _ = "STUB: not implemented"; return nil }
 
 // LeakyBucketMemcached is a Memcached implementation of a LeakyBucketStateBackend.
 type LeakyBucketMemcached struct {
@@ -601,113 +240,33 @@ type LeakyBucketMemcached struct {
 // If raceCheck is true and the keys in Memcached are modified in between State() and SetState() calls then
 // ErrRaceCondition is returned.
 func NewLeakyBucketMemcached(cli *memcache.Client, key string, ttl time.Duration, raceCheck bool) *LeakyBucketMemcached {
-	return &LeakyBucketMemcached{cli: cli, key: key, ttl: ttl, raceCheck: raceCheck}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // State gets the bucket's state from Memcached.
 func (t *LeakyBucketMemcached) State(ctx context.Context) (LeakyBucketState, error) {
-	var (
-		item  *memcache.Item
-		err   error
-		state LeakyBucketState
-	)
-
-	done := make(chan struct{}, 1)
-	t.casId = 0
-
-	go func() {
-		defer close(done)
-
-		item, err = t.cli.Get(t.key)
-	}()
-
-	select {
-	case <-done:
-
-	case <-ctx.Done():
-		return state, ctx.Err()
-	}
-
-	if err != nil {
-		if errors.Is(err, memcache.ErrCacheMiss) {
-			// Keys don't exist, return an empty state.
-			return state, nil
-		}
-
-		return state, errors.Wrap(err, "failed to get keys from memcached")
-	}
-
-	b := bytes.NewBuffer(item.Value)
-
-	err = gob.NewDecoder(b).Decode(&state)
-	if err != nil {
-		return state, errors.Wrap(err, "failed to Decode")
-	}
-
-	t.casId = item.CasID
-
-	return state, nil
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
+
+// Keys don't exist, return an empty state.
 
 // SetState updates the state in Memcached.
 // The provided fencing token is checked on the Memcached side before saving the keys.
 func (t *LeakyBucketMemcached) SetState(ctx context.Context, state LeakyBucketState) error {
-	var err error
-
-	done := make(chan struct{}, 1)
-
-	var b bytes.Buffer
-
-	err = gob.NewEncoder(&b).Encode(state)
-	if err != nil {
-		return errors.Wrap(err, "failed to Encode")
-	}
-
-	go func() {
-		defer close(done)
-
-		item := &memcache.Item{
-			Key:   t.key,
-			Value: b.Bytes(),
-			CasID: t.casId,
-		}
-		if t.ttl > 30*24*time.Hour {
-			// If the value is over 30 days, it treats it as UNIX timestamp.
-			item.Expiration = int32(time.Now().Add(t.ttl).Unix())
-		} else if t.ttl > 0 {
-			// Memcached supports expiration in seconds. It's more precise way.
-			item.Expiration = int32(math.Ceil(t.ttl.Seconds()))
-		}
-
-		if t.raceCheck && t.casId > 0 {
-			err = t.cli.CompareAndSwap(item)
-		} else {
-			err = t.cli.Set(item)
-		}
-	}()
-
-	select {
-	case <-done:
-
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	if err != nil && (errors.Is(err, memcache.ErrCASConflict) || errors.Is(err, memcache.ErrNotStored) || errors.Is(err, memcache.ErrCacheMiss)) {
-		return ErrRaceCondition
-	}
-
-	return errors.Wrap(err, "failed to save keys to memcached")
+	_ = "STUB: not implemented"
+	return nil
 }
+
+// If the value is over 30 days, it treats it as UNIX timestamp.
+
+// Memcached supports expiration in seconds. It's more precise way.
 
 // Reset resets the state in Memcached.
 func (t *LeakyBucketMemcached) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-	t.casId = 0
-
-	return t.SetState(ctx, state)
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // LeakyBucketDynamoDB is a DyanamoDB implementation of a LeakyBucketStateBackend.
@@ -732,64 +291,26 @@ type LeakyBucketDynamoDB struct {
 // If raceCheck is true and the item in DynamoDB are modified in between State() and SetState() calls then
 // ErrRaceCondition is returned.
 func NewLeakyBucketDynamoDB(client *dynamodb.Client, partitionKey string, tableProps DynamoDBTableProperties, ttl time.Duration, raceCheck bool) *LeakyBucketDynamoDB {
-	keys := map[string]types.AttributeValue{
-		tableProps.PartitionKeyName: &types.AttributeValueMemberS{Value: partitionKey},
-	}
-
-	if tableProps.SortKeyUsed {
-		keys[tableProps.SortKeyName] = &types.AttributeValueMemberS{Value: partitionKey}
-	}
-
-	return &LeakyBucketDynamoDB{
-		client:       client,
-		partitionKey: partitionKey,
-		tableProps:   tableProps,
-		ttl:          ttl,
-		raceCheck:    raceCheck,
-		keys:         keys,
-	}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // State gets the bucket's state from DynamoDB.
 func (t *LeakyBucketDynamoDB) State(ctx context.Context) (LeakyBucketState, error) {
-	resp, err := dynamoDBGetItem(ctx, t.client, t.getGetItemInput())
-	if err != nil {
-		return LeakyBucketState{}, err
-	}
-
-	return t.loadStateFromDynamoDB(resp)
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
 
 // SetState updates the state in DynamoDB.
 func (t *LeakyBucketDynamoDB) SetState(ctx context.Context, state LeakyBucketState) error {
-	input := t.getPutItemInputFromState(state)
-
-	var err error
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-
-		_, err = dynamoDBputItem(ctx, t.client, input)
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	return err
+	_ = "STUB: not implemented"
+	return nil
 }
 
 // Reset resets the state in DynamoDB.
 func (t *LeakyBucketDynamoDB) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-
-	return t.SetState(ctx, state)
+	_ = "STUB: not implemented"
+	return nil
 }
 
 const (
@@ -799,54 +320,18 @@ const (
 )
 
 func (t *LeakyBucketDynamoDB) getPutItemInputFromState(state LeakyBucketState) *dynamodb.PutItemInput {
-	item := map[string]types.AttributeValue{}
-	maps.Copy(item, t.keys)
-
-	item[dynamoDBBucketLastKey] = &types.AttributeValueMemberN{Value: strconv.FormatInt(state.Last, 10)}
-
-	item[dynamoDBBucketVersionKey] = &types.AttributeValueMemberN{Value: strconv.FormatInt(t.latestVersion+1, 10)}
-	if t.ttl > 0 {
-		item[t.tableProps.TTLFieldName] = &types.AttributeValueMemberN{Value: strconv.FormatInt(time.Now().Add(t.ttl).Unix(), 10)}
-	}
-
-	input := &dynamodb.PutItemInput{
-		TableName: &t.tableProps.TableName,
-		Item:      item,
-	}
-
-	if t.raceCheck && t.latestVersion > 0 {
-		input.ConditionExpression = aws.String(dynamodbBucketRaceConditionExpression)
-		input.ExpressionAttributeValues = map[string]types.AttributeValue{
-			":version": &types.AttributeValueMemberN{Value: strconv.FormatInt(t.latestVersion, 10)},
-		}
-	}
-
-	return input
+	_ = "STUB: not implemented"
+	return nil
 }
 
 func (t *LeakyBucketDynamoDB) getGetItemInput() *dynamodb.GetItemInput {
-	return &dynamodb.GetItemInput{
-		TableName: &t.tableProps.TableName,
-		Key:       t.keys,
-	}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 func (t *LeakyBucketDynamoDB) loadStateFromDynamoDB(resp *dynamodb.GetItemOutput) (LeakyBucketState, error) {
-	state := LeakyBucketState{}
-
-	err := attributevalue.Unmarshal(resp.Item[dynamoDBBucketLastKey], &state.Last)
-	if err != nil {
-		return state, fmt.Errorf("unmarshal dynamodb Last attribute failed: %w", err)
-	}
-
-	if t.raceCheck {
-		err = attributevalue.Unmarshal(resp.Item[dynamoDBBucketVersionKey], &t.latestVersion)
-		if err != nil {
-			return state, fmt.Errorf("unmarshal dynamodb Version attribute failed: %w", err)
-		}
-	}
-
-	return state, nil
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
 
 // CosmosDBLeakyBucketItem represents a document in CosmosDB for LeakyBucket.
@@ -875,88 +360,21 @@ type LeakyBucketCosmosDB struct {
 // If raceCheck is true and the item in CosmosDB is modified in between State() and SetState() calls then
 // ErrRaceCondition is returned.
 func NewLeakyBucketCosmosDB(client *azcosmos.ContainerClient, partitionKey string, ttl time.Duration, raceCheck bool) *LeakyBucketCosmosDB {
-	return &LeakyBucketCosmosDB{
-		client:       client,
-		partitionKey: partitionKey,
-		id:           "leaky-bucket-" + partitionKey,
-		ttl:          ttl,
-		raceCheck:    raceCheck,
-	}
+	_ = "STUB: not implemented"
+	return nil
 }
 
 func (t *LeakyBucketCosmosDB) State(ctx context.Context) (LeakyBucketState, error) {
-	var item CosmosDBLeakyBucketItem
-
-	resp, err := t.client.ReadItem(ctx, azcosmos.NewPartitionKey().AppendString(t.partitionKey), t.id, &azcosmos.ItemOptions{})
-	if err != nil {
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound {
-			return LeakyBucketState{}, nil
-		}
-
-		return LeakyBucketState{}, err
-	}
-
-	err = json.Unmarshal(resp.Value, &item)
-	if err != nil {
-		return LeakyBucketState{}, errors.Wrap(err, "failed to decode state from Cosmos DB")
-	}
-
-	if t.raceCheck {
-		t.latestVersion = item.Version
-	}
-
-	return item.State, nil
+	_ = "STUB: not implemented"
+	return *new(LeakyBucketState), nil
 }
 
 func (t *LeakyBucketCosmosDB) SetState(ctx context.Context, state LeakyBucketState) error {
-	var err error
-
-	done := make(chan struct{}, 1)
-
-	item := CosmosDBLeakyBucketItem{
-		ID:           t.id,
-		PartitionKey: t.partitionKey,
-		State:        state,
-		Version:      t.latestVersion + 1,
-	}
-	if t.ttl > 0 {
-		item.TTL = int64(math.Ceil(t.ttl.Seconds()))
-	}
-
-	value, err := json.Marshal(item)
-	if err != nil {
-		return errors.Wrap(err, "failed to encode state to JSON")
-	}
-
-	go func() {
-		defer close(done)
-
-		_, err = t.client.UpsertItem(ctx, azcosmos.NewPartitionKey().AppendString(t.partitionKey), value, &azcosmos.ItemOptions{})
-	}()
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	if err != nil {
-		var respErr *azcore.ResponseError
-		if errors.As(err, &respErr) && respErr.StatusCode == http.StatusConflict && t.raceCheck {
-			return ErrRaceCondition
-		}
-
-		return errors.Wrap(err, "failed to save keys to Cosmos DB")
-	}
-
+	_ = "STUB: not implemented"
 	return nil
 }
 
 func (t *LeakyBucketCosmosDB) Reset(ctx context.Context) error {
-	state := LeakyBucketState{
-		Last: 0,
-	}
-
-	return t.SetState(ctx, state)
+	_ = "STUB: not implemented"
+	return nil
 }
